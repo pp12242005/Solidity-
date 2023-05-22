@@ -1,0 +1,125 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity >=0.7.0 <0.9.0;
+
+contract DAO{
+    uint id;
+    string name;
+    uint amount;
+    address payable recipient;
+    uint votes;
+    uint end;
+    bool isExecuted;
+}
+
+mapping(address=>bool)  isInvestor; //address is investor or not
+mapping(address=>uint) numOfshares; //information about shares
+mapping(address=>mapping(uint=>bool)) isVoted;//voting informationof an address for a proposal 
+mapping(address=>mapping(address=>bool)) withdrawalStatus; // manager will set the status of withdrwal 
+
+address [] investorList;
+Proposal[] proposalList;
+mapping(uint=>Proposal) proposals; //id and proposal 
+uint totalShares;
+uint availableFunds;
+uint participationTimeEnd;
+uint nextProposalId;
+uint voteTime;
+uint  quorum;
+address manager;
+
+constructor (uint _participationTimeEnd,uint _voteTime,uint_quorum){
+    participationTimeEnd=block.timestamp+_participationTimeEnd;
+    voteTime=_voteTime;
+    quorum=uint_quorum;
+    manager=msg.sender;
+}
+
+modifier onlyManager(){
+    require(manager==msg.sender,"You are not a manager");
+    _;
+}
+
+function contribution() external payable{//1 wei = 1 share, cost of 1 share = 1wei;
+require(participationTimeEnd>=block.timestamp,"Contribution Time Ended");
+require(msg.value>0,"Investment amount should be greater than 0");
+isInvestor[msg.sender]=true;
+numOfshares[msg.sender]+=msg.value;
+availableFunds+=msg.value;
+investorList.push(msg.sender);
+}
+
+function reedemShare(uint amount) external onlyInvestor(){//shareswithdraw
+require(numOfshares[msg.sender]>=amount,"You do not have sufficient shares");
+require(availableFunds>=amount,"Not sufficient funds");
+numOfshares[msg.sender]-=amount;
+if(numOfshares[msg.sender]==0){
+    isInvestor[msg.sender]=false;
+}
+avaiableFunds-=amount;
+
+payable(msg.sender).transfer(amount);
+}
+
+function transferShare(uint amount,address to) public onlyInvestor(){
+    require(numOfshares[msg.sender]>=amount,"Insufficient shares");
+    require(availableFunds>=amount,"Not sufficient funds");
+
+    numOfshares[msg.sender]-=amount;
+    if(numOfshares[msg.sender]==0)
+    {
+        isInvestor[msg.sender]=false;
+    }
+    numOfshares[to]+=amount;
+    isInvestor[to]=true;
+}
+
+function createProposal(string calldata description,uint amount,address payable recipient) public onlyInvestor(){
+    require(amount<=availableFunds,"Not enough funds");
+    proposals[nextProposalId]=Proposal(nextProposalId,description,amount,recipient,0,block.timestamp+voteTime,false);
+    proposalList.push(proposals[nextProposalId]);
+    nextProposalId++;
+    }
+
+    function voteProposal(uint proposalId) public onlyInvestor(){
+        Proposal storage proposal = proposals[proposalId];
+        require(isVoted[msg.sender][proposalId]==false,"You have already voted for this proposal id");
+        require(proposals[proposalId].end>=block.timestamp,"Voting time has ended");
+        require(proposals[proposalId].isExecuted==false,"This has already executed");
+        isVoted[msg.sender][proposalId]=true;
+        proposal.votes+=numOfshares[msg.sender];
+    } 
+    //ab8-50
+    //4b2-96
+    //787-30
+    //617-4
+    //total-funds
+
+    function executedProposal(uint proposalId) public onlyInvestor(){
+        Proposal storage proposal = proposals[proposalId];
+        require(((proposal.votes*100)/totalShares)>=quorum,"Not greater than the quorum");
+        proposal.isExecuted=true;
+
+        _transfer(proposal.amount,proposal.recipient);
+    }
+
+    function _transfer(uint amount,address payable to) internal{
+        to.transfer(amount);
+    }
+
+    function allow(address to) public onlyManager(){
+        withdrawalStatus[manager][to]=true;
+    }
+    
+    function disallow(address to) public onlyManager(){
+        withdrawalStatus[manager][to]=false;
+    }
+
+    function withdrawEther() public{
+        require(withdrawalStatus[manager][msg.sender]==true,"You ar not allowed to withdraw");
+        require(numOfshares[msg.sender]>=avaiableFunds,"Not enough funds");
+        uint amount = numOfshares[msg.sender];
+        numOfshares[msg.sender]=0;
+
+        transfer(amount,payable(msg.sender));
+    }
+    }
